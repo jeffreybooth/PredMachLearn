@@ -1,0 +1,107 @@
+---
+title: "Introduction to Machine Learning - Course Project"
+author: "Jeff Booth"
+date: "Sunday, October 25, 2015"
+output: html_document
+---
+
+Coursera Data Science Specialisation
+Introduction to Machine Learning - Course Project
+
+#Overview
+This analysis was completed to answer the questions posed in the course project of the Introduction to Machine Learning Course on the Coursera Data Science Specialisation. The question posed in the assignment revolves around investigation of data collected using sensors fitted to excercising humans. Specifically, we are trying to create a model to predict whether a dumbbell curl was performed with correct form based on a number of indicators. The data used is from the research paper "Qualitative Activity Recognition of Weight Lifting Exercises", which was presented at the 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) in Stuttgart, Germany by Eduardo Velloso et al.
+
+This report covers the following aspects of model development and testing:
+
+   1. Steps taken to build model
+   2. Use of  cross validation
+   3. Projections for out of sample error
+   4. Rationale for choices made
+
+To ensure reproducibility, seeds of 2222 were used for all simulations. Analysis was completed using R version 3.1.2 on a PC running Windows 8.1.
+
+#Model Development
+
+##Data Processsing and Cleaning
+When first loading the data into r, I split it into 3 different sets: 70% of the training data was put in a training set, 30% of the training data was put in a testing set and the 20 examples provided for testing were put in a validation set. 
+
+```{r, eval = FALSE}
+  data <- read.csv("pml-training.csv")
+  validation <- read.csv("pml-testing.csv")
+  
+  set.seed(2222)
+  inTrain <- createDataPartition(data$classe, p = 0.7, list = FALSE)
+  training <- data[inTrain,]
+  testing <- data[-inTrain,]
+```
+
+From here, I looked into the structure and summary of the training set and found that there were a number of columns that did not contain any information. In addition, some columns contained information that was not useful for prediction, such as the date and time that the measurement was taken, or information that would cause overfitting, such as User ID.  I removed these columns from all three sets.
+
+```{r, eval = FALSE}
+  str(training)
+  summary(training)
+
+  nodat <- c(-1:-7, -14, -17, -89, -92, -101, -127, -130, -139)
+  training <- training[,nodat]
+  testing <- testing[,nodat]
+  validation <- validation[,nodat]
+```
+
+Now that all of the columns had some useful information, I checked which columns had meaningful variation in the column and eliminated columns that had near zero variability in the training set. I then eliminated the same columns from the test set and the validation set.
+
+```{r, eval = FALSE}
+  ZVar <- nearZeroVar(training[,-145])
+  train2 <- training[,-ZVar]
+  test2 <- testing[,-ZVar]
+  valid2 <- validation[,-ZVar]
+```
+
+The only outstanding issue with this data set is that a number of parameters contained excessive numbers of "NA" values and that a number of observations were of the class "integer", which may not be processed by all model building algorithms. I therefore went through the process of removing parameters that contained more than 25% "NA" values and converted all remaining columns to numeric except for the parameter "classe", which we are predicting on.
+
+```{r, eval = FALSE}
+    for (i in 1:96) {
+    
+    train2[,i] <- as.numeric(train2[,i])  
+    test2[,i] <- as.numeric(test2[,i])
+    valid2[,i] <- as.numeric(valid2[,i])
+  }  
+  
+  rem <- NULL
+  for (j in 1:(dim(train2)[2]-1)) {
+    
+    test <- sapply(train2[,j], is.na)
+    
+    if (sum(test) > (dim(train2)[1]*0.25)) {
+      
+      rem <- c(rem, -j)
+    }   
+  }
+  
+  train2 <- train2[,rem]
+  test2 <- test2[,rem]
+  valid2 <- valid2[,rem]
+```
+
+##Model Evaluation
+I evaluated a number of different models by training them on the "classe" variable using all remaining variables. Because we are more interested in being able to predict bad form than understanding what values impact good or bad form, preProcessing using principal components analysis was used. In sample and out of sample error was then assessed by prediciting results using the test and training data and using the confusionMatrix formula.
+
+```{r, eval = FALSE}
+  modFit1 <- train(classe ~ ., preProcess = "pca", method = "rpart", data = train2)
+
+  pred1 <- predict(modFit2, train2)
+  confusionMatrix(pred1, train2$classe)
+  
+  pred2 <- predict(modFit2, test2)
+  confusionMatrix(pred2, test2$classe)
+```
+
+The final model was built using a random forest model.
+
+#Assessing Error
+##Out of Sample Error Projections
+Models were attempted using a decision tree model as well as boosting, although both of those came up with high in sample error rates. The in sample accuracy for the decision tree was 46%, indicating an error rate of roughly 54%. THe accuracy of a boosted model was 85%.
+
+The random forest model that was used for the final model had an in sample accuracy of 1, indicating that all of the variables had been properly selected. This could be indicative of over-fitting, but when the testing data was run through the model, the accuracy on the testing set was 99.75% with a 95 percent confidence interval of 99.58% to 99.86%. From this, we can safely assume that the model is suitable for predicting new samples. This assumption was verrified when the model correctly predicted all 20 validation sets.
+
+##Cross Vaildation
+The default cross validation parameters for the train function (from the 'caret' package) were used to reduce out of sample error (25 reps, bootstrapping). Because we are interested in accuracy of predicition, it may have been advisable to run with a higher K to offset bias in the model. However, because the fit was so good on the final model, this was not necessary. In addition, the bootstrapping may have contributed to an underestimate of the error, although the results from the testing set show that this error was probably quite small.
